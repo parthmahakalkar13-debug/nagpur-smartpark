@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nagpur SmartPark - Driver Portal</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef8ff',
+              500: '#0066cc',
+              600: '#0052a3',
+              700: '#003d7a',
+              900: '#001a33'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    #map { height: calc(100vh - 75px); z-index: 10; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .route-pulse { stroke-dasharray: 8, 8; animation: dash 30s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -1000; } }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 antialiased overflow-hidden">
+
+  <!-- ================= TOP NAVIGATION ================= -->
+  <header class="h-[75px] bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 md:px-8 flex items-center justify-between z-50 relative">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-400 flex items-center justify-center shadow-lg shadow-brand-600/30">
+        <i class="fa-solid fa-square-parking text-white text-xl"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-lg text-white leading-tight">Nagpur SmartPark</h1>
+          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Free Driver Portal</span>
+        </div>
+        <p class="text-xs text-slate-400">YCCE Hingna • Sitabuldi • Dharampeth • Sadar • Itwari</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= DRIVER VIEWPORT ================= -->
+  <main class="h-[calc(100vh-75px)] flex flex-col md:flex-row relative overflow-hidden">
+    
+    <!-- Sidebar Control Deck -->
+    <aside class="w-full md:w-[420px] bg-slate-900 border-r border-slate-800 flex flex-col z-20 shadow-2xl h-full">
+      <!-- Search & Filters -->
+      <div class="p-4 border-b border-slate-800 space-y-3 bg-slate-900/50">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
+          <input type="text" id="search-input" onkeyup="renderLocationCards()" placeholder="Search (e.g. YCCE, Variety Sq, WHC Road)..." 
+                 class="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-500">
+          <button onclick="getUserGPS()" title="Detect GPS Location" class="absolute right-2.5 top-2.5 text-slate-400 hover:text-brand-400 p-1">
+            <i class="fa-solid fa-crosshairs"></i>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <div class="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <button onclick="setVehicleFilter('4W')" id="filter-4w" class="flex-1 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white">4-Wheeler</button>
+            <button onclick="setVehicleFilter('2W')" id="filter-2w" class="flex-1 py-1.5 text-xs font-semibold rounded-md text-slate-400 hover:text-white">2-Wheeler</button>
+          </div>
+          <select id="radius-filter" onchange="renderLocationCards()" class="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none">
+            <option value="50000">Radius: All Nagpur</option>
+            <option value="1500">Within 1.5 km</option>
+            <option value="5000">Within 5.0 km</option>
+          </select>
+        </div>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1">
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> >5 Slots</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 1-5 Slots</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Full</span>
+        </div>
+      </div>
+
+      <!-- Live Parking Cards List -->
+      <div id="parking-list-container" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3"></div>
+    </aside>
+
+    <!-- Map with In-App Turn-By-Turn HUD -->
+    <div class="flex-1 relative h-full">
+      <div id="map"></div>
+
+      <!-- In-App Navigation HUD -->
+      <div id="nav-hud" class="absolute top-4 left-4 right-4 md:left-6 md:right-auto md:w-[460px] z-[500] hidden">
+        <div class="bg-slate-900/95 backdrop-blur-md border-2 border-brand-500/80 rounded-2xl p-4 shadow-2xl space-y-3 text-white">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-11 h-11 rounded-xl bg-brand-600 text-white flex items-center justify-center text-xl shadow-lg" id="nav-turn-icon">
+                <i class="fa-solid fa-arrow-up"></i>
+              </div>
+              <div>
+                <span class="text-[10px] uppercase tracking-wider font-extrabold text-brand-400 block">Live In-App Navigation</span>
+                <h4 class="text-sm font-bold leading-snug" id="nav-dest-title">Routing to Destination</h4>
+              </div>
+            </div>
+            <button onclick="stopNavigation()" class="text-xs bg-slate-800 hover:bg-rose-600 border border-slate-700 px-2.5 py-1.5 rounded-lg font-semibold text-slate-300 hover:text-white transition">
+              <i class="fa-solid fa-xmark mr-1"></i> Exit
+            </button>
+          </div>
+
+          <div class="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 text-xs flex items-center gap-2">
+            <i class="fa-solid fa-diamond-turn-right text-brand-400"></i>
+            <span id="nav-instruction-text" class="text-slate-200 font-medium">Calculating optimal route...</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-center pt-1">
+            <div class="bg-slate-800/80 p-2 rounded-xl border border-slate-700">
+              <span class="text-[10px] text-slate-400 block uppercase font-medium">Distance</span>
+              <span id="nav-stat-dist" class="text-sm font-extrabold text-white">-- km</span>
+            </div>
+            <div class="bg-slate-800/80 p-2 rounded-xl border border-slate-700">
+              <span class="text-[10px] text-slate-400 block uppercase font-medium">Est. Time</span>
+              <span id="nav-stat-time" class="text-sm font-extrabold text-emerald-400">-- min</span>
+            </div>
+            <div class="bg-slate-800/80 p-2 rounded-xl border border-slate-700">
+              <span class="text-[10px] text-slate-400 block uppercase font-medium">Traffic</span>
+              <span class="text-sm font-extrabold text-amber-400">Normal</span>
+            </div>
+          </div>
+
+          <div class="flex gap-2 pt-1">
+            <button onclick="recenterNavigation()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold py-2 rounded-xl border border-slate-700">
+              <i class="fa-solid fa-location-crosshairs text-brand-400 mr-1"></i> Re-center
+            </button>
+            <button onclick="stopNavigation()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold py-2 rounded-xl">
+              <i class="fa-solid fa-flag-checkered mr-1"></i> Arrived
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Toggles -->
+      <div class="absolute top-4 right-4 z-[400] bg-slate-900/90 backdrop-blur border border-slate-700 p-2.5 rounded-xl shadow-2xl flex flex-col gap-2">
+        <label class="flex items-center gap-2 text-xs cursor-pointer text-slate-300">
+          <input type="checkbox" id="toggle-metro-stations" onchange="toggleMetroLayer()" checked class="accent-brand-500 rounded">
+          <span>Show Metro Stations</span>
+        </label>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= DRIVER SLOT BOOKING MODAL ================= -->
+  <div id="booking-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 max-w-md w-full rounded-3xl p-6 shadow-2xl relative">
+      <button onclick="closeBookingModal()" class="absolute right-4 top-4 text-slate-400 hover:text-white p-1">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <!-- STEP 1: DRIVER INFORMATION & DURATION FORM -->
+      <div id="booking-form-step" class="space-y-4">
+        <div class="flex items-center gap-3 border-b border-slate-800 pb-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-600/20 text-brand-400 flex items-center justify-center text-lg">
+            <i class="fa-solid fa-id-card-clip"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Reserve Parking Slot</h3>
+            <p class="text-xs text-slate-400" id="form-lot-name">Parking Bay Location</p>
+          </div>
+        </div>
+
+        <form onsubmit="submitBookingForm(event)" class="space-y-3.5">
+          <!-- Driver Name -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Driver Full Name</label>
+            <div class="relative">
+              <i class="fa-solid fa-user absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+              <input type="text" id="input-driver-name" required placeholder="e.g. Rahul Sharma"
+                     class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500 placeholder-slate-500">
+            </div>
+          </div>
+
+          <!-- Vehicle Plate Number -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Vehicle Registration Number</label>
+            <div class="relative">
+              <i class="fa-solid fa-car-rear absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+              <input type="text" id="input-vehicle-number" required placeholder="e.g. MH 31 AB 1234"
+                     class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white uppercase focus:outline-none focus:border-brand-500 placeholder-slate-500">
+            </div>
+          </div>
+
+          <!-- Expected Parking Duration (Time) -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Expected Parking Duration</label>
+            <div class="relative">
+              <i class="fa-solid fa-hourglass-half absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+              <select id="input-parking-duration"
+                      class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500">
+                <option value="1">1 Hour</option>
+                <option value="2" selected>2 Hours</option>
+                <option value="3">3 Hours</option>
+                <option value="4">4 Hours</option>
+                <option value="6">6 Hours</option>
+                <option value="8">8 Hours (Full Day)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Free Public Parking Banner -->
+          <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                <i class="fa-solid fa-tag"></i>
+              </div>
+              <div>
+                <span class="text-white font-bold block text-xs">100% Free Public Parking</span>
+                <span class="text-emerald-400 text-[10px]"><i class="fa-solid fa-circle-check mr-1"></i>Held for 15 mins to arrive</span>
+              </div>
+            </div>
+            <span class="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              FREE
+            </span>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold py-3 rounded-xl transition shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-lock"></i> Confirm & Hold Free Slot
+          </button>
+        </form>
+      </div>
+
+      <!-- STEP 2: CONFIRMED RESERVATION RECEIPT & HOLD PASS (WITHOUT SCANNER) -->
+      <div id="booking-success-step" class="hidden space-y-4 text-center">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto text-xl">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-bold text-white">Parking Slot Reserved!</h3>
+          <p class="text-xs text-slate-400 mt-0.5" id="receipt-lot-name">YCCE Campus Bay</p>
+        </div>
+
+        <!-- Prominent Token Badge -->
+        <div class="bg-gradient-to-r from-brand-900/60 to-blue-900/60 border border-brand-500/40 p-3.5 rounded-2xl">
+          <span class="text-[10px] uppercase font-bold tracking-wider text-brand-400 block mb-1">Your Reservation Token</span>
+          <div class="text-2xl font-extrabold font-mono text-white tracking-widest" id="receipt-token-id">NAG-8823</div>
+        </div>
+
+        <!-- 15-Minute Countdown Timer to reach the bay -->
+        <div class="bg-slate-800/80 border border-slate-700 py-2.5 rounded-2xl">
+          <span class="text-[10px] text-slate-400 block uppercase font-medium">Hold Expires In</span>
+          <span id="hold-timer" class="text-2xl font-extrabold text-amber-400 tracking-wider">14:59</span>
+        </div>
+
+        <!-- Structured Driver Receipt Summary -->
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left text-xs space-y-2">
+          <div class="flex justify-between text-slate-400"><span>Driver Name:</span> <strong class="text-white" id="receipt-driver-name">--</strong></div>
+          <div class="flex justify-between text-slate-400"><span>Vehicle Number:</span> <strong class="text-white font-mono" id="receipt-vehicle-no">--</strong></div>
+          <div class="flex justify-between text-slate-400"><span>Duration:</span> <strong class="text-white" id="receipt-duration">2 Hours</strong></div>
+          <div class="flex justify-between text-slate-400 border-t border-slate-800 pt-2"><span>Parking Fee:</span> <strong class="text-emerald-400 font-bold">100% Free</strong></div>
+        </div>
+
+        <p class="text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-circle-info text-brand-400"></i> Show this Token ID or Vehicle Number to the attendant on arrival.
+        </p>
+
+        <button onclick="closeBookingModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-3 rounded-xl transition">
+          Done / Back to Map
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
+  <script>
+    const syncChannel = new BroadcastChannel('nagpur_smartpark_sync');
+
+    const INITIAL_LOCATIONS = [
+      { id: 7, name: "YCCE Campus & Wanadongri Bay", zone: "Hingna / Wanadongri", lat: 21.0955, lng: 78.9789, type: "Institutional Bay", distance: "0.1 km", slots2W: 48, capacity2W: 150, slots4W: 14, capacity4W: 40, hours: "07:30 AM - 07:00 PM" },
+      { id: 1, name: "Sitabuldi Main Road - Bay A", zone: "Dharampeth Zone", lat: 21.1458, lng: 79.0882, type: "Street Bay", distance: "8.2 km", slots2W: 24, capacity2W: 50, slots4W: 12, capacity4W: 30, hours: "09:00 AM - 11:00 PM" },
+      { id: 2, name: "Variety Square Multi-Level", zone: "Sitabuldi", lat: 21.1442, lng: 79.0834, type: "MLCP Ground", distance: "8.0 km", slots2W: 85, capacity2W: 120, slots4W: 4, capacity4W: 60, hours: "24x7 Open" },
+      { id: 3, name: "Dharampeth WHC Road Market", zone: "West Nagpur", lat: 21.1408, lng: 79.0579, type: "Street Bay", distance: "6.8 km", slots2W: 3, capacity2W: 40, slots4W: 0, capacity4W: 20, hours: "10:00 AM - 10:30 PM" },
+      { id: 4, name: "Sadar Residency Road Complex", zone: "Mangalwari Zone", lat: 21.1610, lng: 79.0837, type: "Pay & Park Lot", distance: "9.5 km", slots2W: 18, capacity2W: 35, slots4W: 7, capacity4W: 25, hours: "08:00 AM - 11:30 PM" },
+      { id: 5, name: "Itwari Sarafa Wholesale Market", zone: "Satranjipura Zone", lat: 21.1524, lng: 79.1126, type: "Street Bay", distance: "12.0 km", slots2W: 2, capacity2W: 60, slots4W: 0, capacity4W: 10, hours: "10:00 AM - 09:00 PM" }
+    ];
+
+    function getStorageData() {
+      const stored = localStorage.getItem('NAGPUR_PARKING_DATA');
+      return stored ? JSON.parse(stored) : INITIAL_LOCATIONS;
+    }
+
+    function saveStorageData(data) {
+      localStorage.setItem('NAGPUR_PARKING_DATA', JSON.stringify(data));
+      syncChannel.postMessage({ type: 'DATA_UPDATED' });
+    }
+
+    const appState = {
+      selectedVehicle: '4W',
+      userLocation: [21.0955, 78.9789],
+      holdTimerInterval: null,
+      pendingLocationId: null,
+      navigation: { active: false, destinationId: null, routeLayer: null, startMarker: null },
+      locations: getStorageData(),
+      metroStations: [
+        { name: "Lokmanya Nagar Metro (Hingna)", lat: 21.1172, lng: 79.0065 },
+        { name: "Sitabuldi Interchange Metro", lat: 21.1462, lng: 79.0845 }
+      ]
+    };
+
+    let map;
+    let markersLayer = L.layerGroup();
+    let metroLayer = L.layerGroup();
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      renderLocationCards();
+      
+      syncChannel.onmessage = () => {
+        appState.locations = getStorageData();
+        renderLocationCards();
+        drawMarkers();
+      };
+      window.addEventListener('storage', () => {
+        appState.locations = getStorageData();
+        renderLocationCards();
+        drawMarkers();
+      });
+    });
+
+    function initMap() {
+      map = L.map('map', { zoomControl: false }).setView([21.1200, 79.0300], 12);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      markersLayer.addTo(map);
+      metroLayer.addTo(map);
+
+      drawMarkers();
+      drawMetroStations();
+    }
+
+    function getMarkerColor(slots) {
+      if (slots === 0) return '#ef4444';
+      if (slots <= 5) return '#f59e0b';
+      return '#10b981';
+    }
+
+    function drawMarkers() {
+      markersLayer.clearLayers();
+      appState.locations.forEach(loc => {
+        const slots = appState.selectedVehicle === '4W' ? loc.slots4W : loc.slots2W;
+        const color = getMarkerColor(slots);
+
+        const customIcon = L.divIcon({
+          className: 'custom-map-pin',
+          html: `<div style="background-color: ${color};" class="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white font-extrabold text-xs shadow-lg transform -translate-x-1/2 -translate-y-1/2">${slots}</div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        const marker = L.marker([loc.lat, loc.lng], { icon: customIcon });
+        marker.bindPopup(`
+          <div class="p-2 font-sans text-slate-900 min-w-[190px]">
+            <h4 class="font-bold text-sm">${loc.name}</h4>
+            <div class="text-xs text-slate-600 mt-1">${loc.type} • ${loc.zone}</div>
+            <div class="flex justify-between items-center my-2 text-xs font-semibold">
+              <span>Available ${appState.selectedVehicle}:</span>
+              <span class="px-2 py-0.5 rounded text-white font-bold" style="background:${color}">${slots} Slots</span>
+            </div>
+            <div class="text-xs text-emerald-600 font-bold mb-2"><i class="fa-solid fa-circle-check mr-1"></i> Free Public Parking</div>
+            <div class="flex flex-col gap-1.5">
+              <button onclick="startInAppNavigation(${loc.id})" class="w-full bg-slate-900 text-brand-400 border border-slate-700 text-xs font-bold py-1.5 rounded-lg hover:bg-slate-800"><i class="fa-solid fa-location-arrow"></i> Navigate In-App</button>
+              <button onclick="openBookingModal(${loc.id})" class="w-full bg-blue-600 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-blue-700">Hold Free Spot (15m)</button>
+            </div>
+          </div>
+        `);
+        markersLayer.addLayer(marker);
+      });
+    }
+
+    function drawMetroStations() {
+      metroLayer.clearLayers();
+      appState.metroStations.forEach(stn => {
+        const icon = L.divIcon({
+          html: `<div class="bg-indigo-600 text-white p-1 rounded-md text-[10px] font-bold shadow border border-white"><i class="fa-solid fa-train-subway"></i> Metro</div>`,
+          iconSize: [60, 20]
+        });
+        metroLayer.addLayer(L.marker([stn.lat, stn.lng], { icon }).bindPopup(`<b>${stn.name}</b>`));
+      });
+    }
+
+    function renderLocationCards() {
+      const container = document.getElementById('parking-list-container');
+      container.innerHTML = '';
+      const query = document.getElementById('search-input').value.toLowerCase();
+      const filtered = appState.locations.filter(l => l.name.toLowerCase().includes(query) || l.zone.toLowerCase().includes(query));
+
+      if (!filtered.length) {
+        container.innerHTML = `<div class="text-center py-8 text-slate-500 text-sm">No parking bays found.</div>`;
+        return;
+      }
+
+      filtered.forEach(loc => {
+        const slots = appState.selectedVehicle === '4W' ? loc.slots4W : loc.slots2W;
+        const capacity = appState.selectedVehicle === '4W' ? loc.capacity4W : loc.capacity2W;
+        const colorClass = slots === 0 ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' : slots <= 5 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+        const isNavigating = appState.navigation.active && appState.navigation.destinationId === loc.id;
+
+        const card = document.createElement('div');
+        card.className = `bg-slate-800/80 hover:bg-slate-800 border ${isNavigating ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-slate-700/80'} rounded-2xl p-4 transition shadow-md space-y-3 cursor-pointer`;
+        card.onclick = (e) => { if (!e.target.closest('button')) map.flyTo([loc.lat, loc.lng], 16); };
+        card.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-brand-400">${loc.zone}</span>
+              <h3 class="font-bold text-sm text-white">${loc.name}</h3>
+              <p class="text-xs text-slate-400 mt-0.5">${loc.type} • ${loc.distance} away</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-full border ${colorClass}">${slots} / ${capacity} Left</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-900/60 p-2.5 rounded-xl border border-slate-800 text-slate-300">
+            <div class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i> Free Parking</div>
+            <div><i class="fa-solid fa-clock text-slate-400 mr-1"></i> ${loc.hours}</div>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="openBookingModal(${loc.id})" class="flex-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-ticket"></i> Hold Spot (15m)
+            </button>
+            <button onclick="startInAppNavigation(${loc.id})" class="px-4 ${isNavigating ? 'bg-emerald-600' : 'bg-slate-700 hover:bg-brand-600'} text-white text-xs font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-location-arrow"></i> ${isNavigating ? 'Routing' : 'Navigate'}
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    /* ================= DRIVER BOOKING FORM LOGIC ================= */
+    function openBookingModal(locationId) {
+      const loc = appState.locations.find(l => l.id === locationId);
+      const is4W = appState.selectedVehicle === '4W';
+      const available = is4W ? loc.slots4W : loc.slots2W;
+
+      if (available <= 0) {
+        alert("This parking bay is currently completely full!");
+        return;
+      }
+
+      appState.pendingLocationId = locationId;
+
+      document.getElementById('form-lot-name').innerText = `${loc.name} (${appState.selectedVehicle})`;
+      document.getElementById('input-driver-name').value = '';
+      document.getElementById('input-vehicle-number').value = '';
+      document.getElementById('input-parking-duration').value = '2';
+
+      document.getElementById('booking-form-step').classList.remove('hidden');
+      document.getElementById('booking-success-step').classList.add('hidden');
+      document.getElementById('booking-modal').classList.remove('hidden');
+    }
+
+    function submitBookingForm(e) {
+      e.preventDefault();
+      const loc = appState.locations.find(l => l.id === appState.pendingLocationId);
+      if (!loc) return;
+
+      const driverName = document.getElementById('input-driver-name').value.trim();
+      const vehicleNo = document.getElementById('input-vehicle-number').value.trim().toUpperCase();
+      const durationHours = document.getElementById('input-parking-duration').value;
+      const is4W = appState.selectedVehicle === '4W';
+
+      if (!driverName || !vehicleNo) return;
+
+      // 1. Decrement Available Slot
+      if (is4W) loc.slots4W--; else loc.slots2W--;
+      saveStorageData(appState.locations);
+
+      const tokenId = "NAG-" + Math.floor(1000 + Math.random() * 9000);
+
+      // 2. Save structured booking record
+      const activeBookings = JSON.parse(localStorage.getItem('NAGPUR_ACTIVE_BOOKINGS') || '[]');
+      activeBookings.push({
+        id: tokenId,
+        driverName: driverName,
+        vehicleNumber: vehicleNo,
+        lotId: loc.id,
+        lotName: loc.name,
+        vehicle: is4W ? '4-Wheeler' : '2-Wheeler',
+        duration: `${durationHours} Hours`,
+        tariff: 'Free',
+        timestamp: new Date().toLocaleTimeString(),
+        status: 'Active'
+      });
+      localStorage.setItem('NAGPUR_ACTIVE_BOOKINGS', JSON.stringify(activeBookings));
+      syncChannel.postMessage({ type: 'NEW_BOOKING', tokenId });
+
+      // 3. Populate Confirmation Step UI
+      document.getElementById('receipt-lot-name').innerText = loc.name;
+      document.getElementById('receipt-token-id').innerText = tokenId;
+      document.getElementById('receipt-driver-name').innerText = driverName;
+      document.getElementById('receipt-vehicle-no').innerText = vehicleNo;
+      document.getElementById('receipt-duration').innerText = `${durationHours} Hours`;
+
+      // 4. Switch to Confirmation View & Start Countdown
+      document.getElementById('booking-form-step').classList.add('hidden');
+      document.getElementById('booking-success-step').classList.remove('hidden');
+      startHoldCountdown(15 * 60);
+
+      renderLocationCards();
+      drawMarkers();
+    }
+
+    function startHoldCountdown(duration) {
+      clearInterval(appState.holdTimerInterval);
+      let timer = duration;
+      const display = document.getElementById('hold-timer');
+      appState.holdTimerInterval = setInterval(() => {
+        const m = parseInt(timer / 60, 10);
+        const s = parseInt(timer % 60, 10);
+        display.textContent = (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+        if (--timer < 0) {
+          clearInterval(appState.holdTimerInterval);
+          alert("Holding pass expired! Slot returned to general pool.");
+          closeBookingModal();
+        }
+      }, 1000);
+    }
+
+    function closeBookingModal() {
+      document.getElementById('booking-modal').classList.add('hidden');
+    }
+
+    /* ================= NAVIGATION & CONTROLS ================= */
+    async function startInAppNavigation(locationId) {
+      const loc = appState.locations.find(l => l.id === locationId);
+      if (!loc) return;
+      map.closePopup();
+
+      appState.navigation.active = true;
+      appState.navigation.destinationId = loc.id;
+      document.getElementById('nav-hud').classList.remove('hidden');
+      document.getElementById('nav-dest-title').innerText = `Navigating to: ${loc.name}`;
+      document.getElementById('nav-instruction-text').innerText = `Calculating route...`;
+
+      if (appState.navigation.routeLayer) map.removeLayer(appState.navigation.routeLayer);
+      if (appState.navigation.startMarker) map.removeLayer(appState.navigation.startMarker);
+
+      const start = appState.userLocation;
+      const end = [loc.lat, loc.lng];
+
+      const carIcon = L.divIcon({
+        html: `<div class="w-8 h-8 rounded-full bg-brand-500 border-2 border-white text-white flex items-center justify-center text-xs shadow-2xl"><i class="fa-solid fa-car-side"></i></div>`,
+        iconSize: [32, 32], iconAnchor: [16, 16]
+      });
+      appState.navigation.startMarker = L.marker(start, { icon: carIcon }).addTo(map);
+
+      try {
+        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`);
+        const data = await res.json();
+        if (data.code === 'Ok' && data.routes.length) {
+          const route = data.routes[0];
+          const coords = route.geometry.coordinates.map(pt => [pt[1], pt[0]]);
+          appState.navigation.routeLayer = L.polyline(coords, { color: '#0284c7', weight: 6, opacity: 0.9, className: 'route-pulse' }).addTo(map);
+          document.getElementById('nav-stat-dist').innerText = `${(route.distance / 1000).toFixed(1)} km`;
+          document.getElementById('nav-stat-time').innerText = `${Math.round(route.duration / 60)} mins`;
+          document.getElementById('nav-instruction-text').innerText = `Follow in-app route to ${loc.name}`;
+          map.fitBounds(appState.navigation.routeLayer.getBounds(), { padding: [80, 80] });
+        }
+      } catch(e) {
+        appState.navigation.routeLayer = L.polyline([start, end], { color: '#38bdf8', weight: 5, dashArray: '10, 10' }).addTo(map);
+        map.fitBounds(appState.navigation.routeLayer.getBounds(), { padding: [80, 80] });
+      }
+      renderLocationCards();
+    }
+
+    function stopNavigation() {
+      appState.navigation.active = false;
+      appState.navigation.destinationId = null;
+      if (appState.navigation.routeLayer) map.removeLayer(appState.navigation.routeLayer);
+      if (appState.navigation.startMarker) map.removeLayer(appState.navigation.startMarker);
+      document.getElementById('nav-hud').classList.add('hidden');
+      renderLocationCards();
+      map.setView([21.1200, 79.0300], 12);
+    }
+
+    function recenterNavigation() {
+      if (appState.navigation.routeLayer) map.fitBounds(appState.navigation.routeLayer.getBounds(), { padding: [80, 80] });
+    }
+
+    function setVehicleFilter(type) {
+      appState.selectedVehicle = type;
+      document.getElementById('filter-4w').className = type === '4W' ? "flex-1 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white" : "flex-1 py-1.5 text-xs font-semibold rounded-md text-slate-400";
+      document.getElementById('filter-2w').className = type === '2W' ? "flex-1 py-1.5 text-xs font-semibold rounded-md bg-brand-600 text-white" : "flex-1 py-1.5 text-xs font-semibold rounded-md text-slate-400";
+      renderLocationCards();
+      drawMarkers();
+    }
+
+    function getUserGPS() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          appState.userLocation = [pos.coords.latitude, pos.coords.longitude];
+          map.flyTo(appState.userLocation, 16);
+          L.circleMarker(appState.userLocation, { color: '#0066cc', radius: 8 }).addTo(map).bindPopup("Current Location").openPopup();
+        });
+      }
+    }
+
+    function toggleMetroLayer() { 
+      document.getElementById('toggle-metro-stations').checked ? map.addLayer(metroLayer) : map.removeLayer(metroLayer); 
+    }
+  </script>
+</body>
+</html>

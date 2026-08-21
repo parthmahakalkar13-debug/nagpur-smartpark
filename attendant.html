@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nagpur SmartPark - Attendant Station</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .booking-highlight { animation: highlight-pulse 1.5s ease-out; }
+    @keyframes highlight-pulse {
+      0% { background-color: rgba(16, 185, 129, 0.3); }
+      100% { background-color: rgba(15, 23, 42, 0.8); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-2xl mx-auto space-y-6">
+    
+    <!-- Top Bar -->
+    <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white text-lg shadow-lg shadow-emerald-600/30">
+          <i class="fa-solid fa-hand-holding-hand"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-base text-white leading-tight">NMC Ground Operator App</h1>
+          <p class="text-xs text-slate-400">Live Driver Telemetry & Ground Bay Management</p>
+        </div>
+      </div>
+      <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Auto-Sync Active
+      </span>
+    </div>
+
+    <!-- Assigned Bay Selector -->
+    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3 shadow-xl">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Assigned Station Location</span>
+        <span class="text-[11px] text-slate-400">Operator ID: <strong class="text-slate-200">NMC-FIELD-56</strong></span>
+      </div>
+      <select id="assigned-lot-select" onchange="changeLot(this.value)" class="w-full bg-slate-800 border border-slate-700 text-white text-sm font-semibold rounded-xl p-3 focus:outline-none focus:border-emerald-500"></select>
+    </div>
+
+    <!-- 4W vs 2W Toggle -->
+    <div class="grid grid-cols-2 gap-3 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+      <button onclick="setVehicle('4W')" id="btn-4w" class="py-3 text-sm font-bold rounded-lg bg-blue-600 text-white flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-car"></i> 4-Wheeler Bay
+      </button>
+      <button onclick="setVehicle('2W')" id="btn-2w" class="py-3 text-sm font-bold rounded-lg text-slate-400 hover:text-white flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-motorcycle"></i> 2-Wheeler Bay
+      </button>
+    </div>
+
+    <!-- Real-Time Slot Display -->
+    <div class="bg-slate-900 border-2 border-slate-800 rounded-3xl p-6 text-center shadow-2xl relative overflow-hidden">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Current Available Slots</div>
+      <div id="slot-count" class="text-7xl font-extrabold my-3 text-emerald-400">--</div>
+      <div class="text-sm text-slate-400 font-medium" id="capacity-label">Total Capacity: --</div>
+      <div class="w-full bg-slate-800 h-3 rounded-full mt-4 overflow-hidden">
+        <div id="slot-progress" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: 50%"></div>
+      </div>
+    </div>
+
+    <!-- Big Sunlight-Optimized Tap Buttons -->
+    <div class="grid grid-cols-2 gap-4">
+      <button onclick="updateSlot(-1)" class="h-28 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-lg flex flex-col items-center justify-center shadow-lg shadow-emerald-900/40 transition border border-emerald-400/30">
+        <i class="fa-solid fa-arrow-down-long text-3xl mb-1"></i>
+        <span>+ VEHICLE IN</span>
+        <span class="text-[10px] font-normal opacity-80">(Reduces Available Slot)</span>
+      </button>
+      <button onclick="updateSlot(1)" class="h-28 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-extrabold text-lg flex flex-col items-center justify-center shadow-lg shadow-rose-900/40 transition border border-rose-400/30">
+        <i class="fa-solid fa-arrow-up-long text-3xl mb-1"></i>
+        <span>- VEHICLE OUT</span>
+        <span class="text-[10px] font-normal opacity-80">(Frees Available Slot)</span>
+      </button>
+    </div>
+
+    <!-- QR / Token Code Validator -->
+    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3 shadow-xl">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2">
+        <i class="fa-solid fa-qrcode text-emerald-400"></i> Verify Driver 15-Min Reservation Pass
+      </h3>
+      <div class="flex gap-2">
+        <input type="text" id="token-input" placeholder="Enter Token ID or Vehicle No" class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white uppercase focus:outline-none focus:border-emerald-500">
+        <button onclick="verifyToken()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-xl text-sm font-semibold transition">Verify</button>
+      </div>
+      <div id="token-result-card" class="hidden mt-3 p-4 rounded-xl border bg-slate-950 text-xs space-y-2"></div>
+    </div>
+
+    <!-- LIVE DRIVER BOOKINGS FEED -->
+    <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-car-side text-brand-400"></i> Live Incoming Bookings & Parked Drivers
+        </h3>
+        <span class="text-[11px] text-slate-400" id="booking-count-badge">0 Active</span>
+      </div>
+
+      <div id="bookings-feed-container" class="space-y-2.5 max-h-96 overflow-y-auto custom-scrollbar">
+        <!-- Dynamically filled with Driver Details -->
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const syncChannel = new BroadcastChannel('nagpur_smartpark_sync');
+    let currentLotId = 7; // Default YCCE Campus
+    let currentVehicle = '4W';
+
+    function getLocations() {
+      return JSON.parse(localStorage.getItem('NAGPUR_PARKING_DATA') || '[]');
+    }
+
+    function saveLocations(data) {
+      localStorage.setItem('NAGPUR_PARKING_DATA', JSON.stringify(data));
+      syncChannel.postMessage({ type: 'DATA_UPDATED' });
+    }
+
+    function getBookings() {
+      return JSON.parse(localStorage.getItem('NAGPUR_ACTIVE_BOOKINGS') || '[]');
+    }
+
+    function init() {
+      const locs = getLocations();
+      const select = document.getElementById('assigned-lot-select');
+      select.innerHTML = '';
+      locs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id;
+        opt.innerText = `${l.name} (${l.zone})`;
+        if (l.id === currentLotId) opt.selected = true;
+        select.appendChild(opt);
+      });
+      render();
+      renderBookingsList();
+    }
+
+    function changeLot(id) {
+      currentLotId = parseInt(id);
+      render();
+      renderBookingsList();
+    }
+
+    function setVehicle(v) {
+      currentVehicle = v;
+      document.getElementById('btn-4w').className = v === '4W' 
+        ? 'py-3 text-sm font-bold rounded-lg bg-blue-600 text-white flex items-center justify-center gap-2 transition' 
+        : 'py-3 text-sm font-bold rounded-lg text-slate-400 hover:text-white flex items-center justify-center gap-2 transition';
+      document.getElementById('btn-2w').className = v === '2W' 
+        ? 'py-3 text-sm font-bold rounded-lg bg-blue-600 text-white flex items-center justify-center gap-2 transition' 
+        : 'py-3 text-sm font-bold rounded-lg text-slate-400 hover:text-white flex items-center justify-center gap-2 transition';
+      render();
+    }
+
+    function updateSlot(delta) {
+      const locs = getLocations();
+      const lot = locs.find(l => l.id === currentLotId);
+      if (!lot) return;
+
+      const is4W = currentVehicle === '4W';
+      const current = is4W ? lot.slots4W : lot.slots2W;
+      const capacity = is4W ? lot.capacity4W : lot.capacity2W;
+      const nextVal = current + delta;
+
+      if (nextVal < 0 || nextVal > capacity) {
+        alert("Operation out of bounds for physical bay capacity!");
+        return;
+      }
+
+      if (is4W) lot.slots4W = nextVal; else lot.slots2W = nextVal;
+      saveLocations(locs);
+      render();
+    }
+
+    function render() {
+      const locs = getLocations();
+      const lot = locs.find(l => l.id === currentLotId);
+      if (!lot) return;
+
+      const is4W = currentVehicle === '4W';
+      const slots = is4W ? lot.slots4W : lot.slots2W;
+      const capacity = is4W ? lot.capacity4W : lot.capacity2W;
+
+      document.getElementById('slot-count').innerText = slots;
+      document.getElementById('capacity-label').innerText = `Total ${currentVehicle} Capacity: ${capacity} Vehicles`;
+      const pct = (slots / capacity) * 100;
+      const prog = document.getElementById('slot-progress');
+      prog.style.width = pct + '%';
+      prog.className = slots === 0 ? 'bg-rose-500 h-full rounded-full' : slots <= 5 ? 'bg-amber-500 h-full rounded-full' : 'bg-emerald-500 h-full rounded-full';
+    }
+
+    function renderBookingsList() {
+      const bookings = getBookings();
+      const container = document.getElementById('bookings-feed-container');
+      const badge = document.getElementById('booking-count-badge');
+      
+      const thisStationBookings = bookings.filter(b => b.lotId === currentLotId);
+      badge.innerText = `${thisStationBookings.length} Active for this Station (${bookings.length} Total)`;
+
+      if (bookings.length === 0) {
+        container.innerHTML = `
+          <div class="p-6 text-center text-slate-500 bg-slate-950/60 rounded-xl border border-slate-800 text-xs">
+            <i class="fa-solid fa-inbox text-2xl mb-2 block opacity-40"></i>
+            No driver reservations yet. When a driver books a slot, their details will appear here live.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+
+      bookings.slice().reverse().forEach(b => {
+        const isCurrentLot = b.lotId === currentLotId;
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-xl border ${isCurrentLot ? 'bg-slate-950 border-emerald-500/40 ring-1 ring-emerald-500/20 booking-highlight' : 'bg-slate-950/60 border-slate-800 opacity-75'} text-xs space-y-2`;
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-2">
+              <span class="font-mono font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">${b.id}</span>
+              <span class="font-bold text-slate-200 text-sm">${b.driverName || 'Anonymous Driver'}</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full ${isCurrentLot ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'} text-[10px] font-bold">
+              ${isCurrentLot ? 'This Station' : 'Other Bay'}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-900/80 p-2.5 rounded-lg border border-slate-800/80 text-[11px]">
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase">Vehicle No</span>
+              <strong class="text-white font-mono">${b.vehicleNumber || '--'}</strong>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase">Duration</span>
+              <strong class="text-amber-400">${b.duration || '--'}</strong>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase">Vehicle Type</span>
+              <strong class="text-slate-300">${b.vehicle || '--'}</strong>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase">Booked At</span>
+              <strong class="text-slate-300">${b.timestamp || '--'}</strong>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span><i class="fa-solid fa-location-dot text-blue-400 mr-1"></i><strong>Location:</strong> ${b.lotName}</span>
+            <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-check mr-1"></i>100% Free Pass</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function verifyToken() {
+      const val = document.getElementById('token-input').value.trim().toUpperCase();
+      const card = document.getElementById('token-result-card');
+      card.classList.remove('hidden');
+
+      const bookings = getBookings();
+      const match = bookings.find(b => 
+        b.id === val || 
+        (b.vehicleNumber && b.vehicleNumber.replace(/\s+/g, '') === val.replace(/\s+/g, '')) || 
+        val.includes(b.id)
+      );
+
+      if (match) {
+        card.className = "mt-3 p-4 rounded-xl border border-emerald-500/40 bg-emerald-950/20 text-xs space-y-2.5 block";
+        card.innerHTML = `
+          <div class="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+            <span class="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
+              <i class="fa-solid fa-circle-check text-base"></i> Valid Parking Reservation Found!
+            </span>
+            <span class="font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[11px] font-bold">${match.id}</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-slate-300 text-xs">
+            <div><span class="text-slate-500 block text-[10px] uppercase">Driver Name:</span> <strong class="text-white text-sm">${match.driverName}</strong></div>
+            <div><span class="text-slate-500 block text-[10px] uppercase">Vehicle Number:</span> <strong class="text-white font-mono text-sm">${match.vehicleNumber}</strong></div>
+            <div><span class="text-slate-500 block text-[10px] uppercase">Duration Booked:</span> <strong class="text-amber-400">${match.duration}</strong></div>
+            <div><span class="text-slate-500 block text-[10px] uppercase">Parking Location:</span> <strong class="text-slate-200">${match.lotName}</strong></div>
+          </div>
+
+          <div class="pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-emerald-500/20">
+            <span>Booking Time: ${match.timestamp}</span>
+            <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-circle-dot mr-1"></i>Ready for Bay Entry</span>
+          </div>
+        `;
+      } else {
+        card.className = "mt-3 p-4 rounded-xl border border-rose-500/40 bg-rose-950/20 text-xs space-y-1 block";
+        card.innerHTML = `
+          <div class="text-rose-400 font-bold flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-xmark"></i> Invalid Token or Vehicle Number
+          </div>
+          <p class="text-slate-400 text-[11px]">No active driver reservation found matching "${val}". Please check the token ID or vehicle registration number.</p>
+        `;
+      }
+    }
+
+    syncChannel.onmessage = () => {
+      render();
+      renderBookingsList();
+    };
+    window.addEventListener('storage', () => {
+      render();
+      renderBookingsList();
+    });
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
